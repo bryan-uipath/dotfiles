@@ -49,7 +49,7 @@ j() {
   case $1 in
     po)    cd ~/code/PO.Frontend ;;
     flow)  cd ~/code/flow-workbench ;;
-    notes) cd ~/code/notes ;;
+    notes) cd ~/notes ;;
     *)     cd ~/code/$1 ;;
   esac
 }

@@ -31,7 +31,9 @@ let mapleader = " "
 nnoremap <leader>nn :edit ~/notes/
 nnoremap <leader>ny :edit ~/notes/2026.md<CR>
 nnoremap <leader>np :edit ~/notes/people/
+nnoremap <leader>nr :edit ~/notes/reviews/
 nnoremap <leader>nd :execute 'edit ~/notes/daily/' . strftime("%Y-%m-%d") . '.md'<CR>
+nnoremap <leader>nm :execute 'edit ~/notes/meetings/' . strftime("%Y-%m-%d") . '-'
 
 " Next business day (skips weekends)
 function! NextBusinessDay()
@@ -62,3 +64,8 @@ nnoremap <leader>x :call CycleCheckbox()<CR>
 
 " Follow [[wiki-link]] under cursor
 nnoremap <CR> :execute 'edit ~/notes/' . substitute(expand('<cWORD>'), '[^a-zA-Z0-9_/-]', '', 'g') . '.md'<CR>
+
+" Auto-load meeting template for new meeting files
+autocmd BufNewFile ~/notes/meetings/*.md 0r ~/notes/templates/meeting.md
+      \ | execute '%s/DATE/' . strftime("%Y-%m-%d") . '/e'
+      \ | execute 'normal! gg0f:ll'
