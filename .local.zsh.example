@@ -1,0 +1,14 @@
+# Machine-specific config
+# Copy to .local.zsh and customize
+
+# Add machine-specific jump shortcuts
+J_SHORTCUTS+=(
+    po    ~/code/PO.Frontend
+    flow  ~/code/flow-workbench
+)
+
+# Machine-specific aliases
+alias ghui='chrome "https://github.com/UiPath/$1"'
+
+# Work-specific tokens
+export GH_NPM_REGISTRY_TOKEN=$(gh auth token)

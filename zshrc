@@ -1,21 +1,10 @@
+# Source secrets if they exist
+[[ -f ~/dotfiles/.secrets ]] && source ~/dotfiles/.secrets
 
-export NVM_DIR="$HOME/.nvm"
-  [ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"  # This loads nvm
-  [ -s "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm" ] && \. "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm"  # This loads nvm bash_completion
-
+# Source machine-specific config if it exists
+[[ -f ~/dotfiles/.local.zsh ]] && source ~/dotfiles/.local.zsh
 
 export PATH="$HOME/.local/bin:$PATH"
-
-export GH_NPM_REGISTRY_TOKEN=$(gh auth token)
-
-chrome() {
-    osascript -e "tell application \"Google Chrome\" to open location \"$1\""
-}
-
-ghui() {
-    chrome "https://github.com/UiPath/$1"
-}
-
 
 export EDITOR=vim
 autoload -U edit-command-line
@@ -23,6 +12,11 @@ zle -N edit-command-line
 bindkey '^x^e' edit-command-line
 
 eval "$(starship init zsh)"
+
+# NVM
+export NVM_DIR="$HOME/.nvm"
+[ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"
+[ -s "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm" ] && \. "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm"
 
 # Git
 alias gs="git status"
@@ -44,15 +38,26 @@ alias sz="source ~/.zshrc"
 alias dcu="docker compose up -d"
 alias dcl="docker compose logs"
 
-# Navigation - j prefix
-j() {
-  case $1 in
-    po)    cd ~/code/PO.Frontend ;;
-    flow)  cd ~/code/flow-workbench ;;
-    notes) cd ~/notes ;;
-    *)     cd ~/code/$1 ;;
-  esac
-}
-
 # Open current dir
 alias o="open ."
+
+# Open URL in Chrome
+chrome() {
+    osascript -e "tell application \"Google Chrome\" to open location \"$1\""
+}
+
+# Navigation - j prefix
+# Define base shortcuts (shared across all machines)
+typeset -gA J_SHORTCUTS
+J_SHORTCUTS=(
+    notes ~/notes
+)
+
+# j function - uses J_SHORTCUTS array, falls back to ~/code/<name>
+j() {
+    if [[ -n "${J_SHORTCUTS[$1]}" ]]; then
+        cd "${J_SHORTCUTS[$1]}"
+    else
+        cd ~/code/$1
+    fi
+}

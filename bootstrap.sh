@@ -1,31 +1,25 @@
 #!/bin/bash
-set -e
 
-DOTFILES="$(cd "$(dirname "$0")" && pwd)"
+DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-link() {
-  src="$DOTFILES/$1"
-  dest="$2"
+# Symlink zshrc
+ln -sf "$DOTFILES_DIR/zshrc" ~/.zshrc
 
-  if [ -L "$dest" ]; then
-    rm "$dest"
-  elif [ -f "$dest" ]; then
-    echo "Backing up $dest to $dest.backup"
-    mv "$dest" "$dest.backup"
-  fi
+# Create .secrets from template if it doesn't exist
+if [[ ! -f "$DOTFILES_DIR/.secrets" ]]; then
+    cp "$DOTFILES_DIR/.secrets.example" "$DOTFILES_DIR/.secrets"
+    echo "Created .secrets from template - fill in your values"
+fi
 
-  ln -s "$src" "$dest"
-  echo "Linked $dest -> $src"
-}
+# Create .local.zsh from template if it doesn't exist
+if [[ ! -f "$DOTFILES_DIR/.local.zsh" ]]; then
+    cp "$DOTFILES_DIR/.local.zsh.example" "$DOTFILES_DIR/.local.zsh"
+    echo "Created .local.zsh from template - customize your shortcuts"
+fi
 
-# Create config directories
-mkdir -p ~/.config
+# Run macOS setup
+if [[ "$(uname)" == "Darwin" ]]; then
+    "$DOTFILES_DIR/macos-setup.sh"
+fi
 
-# Link dotfiles
-link "zshrc"        ~/.zshrc
-link "vimrc"        ~/.vimrc
-link "tmux.conf"    ~/.tmux.conf
-# link "starship.toml" ~/.config/starship.toml  # uncomment when added
-
-echo ""
-echo "Done! Run 'source ~/.zshrc' to reload."
+echo "Done! Restart your shell or run: source ~/.zshrc"
