@@ -30,6 +30,7 @@ alias gd="git diff"
 alias ga="git add"
 alias gc="git commit -m"
 alias grs="git reset --hard"
+alias gpull="git pull"
 
 # Quick reload
 alias sz="source ~/.zshrc"
@@ -40,6 +41,9 @@ alias dcl="docker compose logs"
 
 # Open current dir
 alias o="open ."
+
+# Notes
+alias nw='vim ~/notes/weekly/$(date +%Y-w%V).md'
 
 # Open URL in Chrome
 chrome() {

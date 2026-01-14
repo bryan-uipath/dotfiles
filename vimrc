@@ -32,22 +32,14 @@ nnoremap <leader>nn :edit ~/notes/
 nnoremap <leader>ny :edit ~/notes/2026.md<CR>
 nnoremap <leader>np :edit ~/notes/people/
 nnoremap <leader>nr :edit ~/notes/reviews/
-nnoremap <leader>nd :execute 'edit ~/notes/daily/' . strftime("%Y-%m-%d") . '.md'<CR>
+nnoremap <leader>nw :execute 'edit ~/notes/weekly/' . strftime("%Y-w%V") . '.md'<CR>
 nnoremap <leader>nm :execute 'edit ~/notes/meetings/' . strftime("%Y-%m-%d") . '-'
 
-" Next business day (skips weekends)
-function! NextBusinessDay()
-  let dow = strftime("%w")
-  if dow == 5
-    let days = 3
-  elseif dow == 6
-    let days = 2
-  else
-    let days = 1
-  endif
-  return trim(system('date -v+' . days . 'd +%Y-%m-%d'))
+" Next week (opens next week's notes in vsplit)
+function! NextWeek()
+  return trim(system('date -v+7d +%Y-w%V'))
 endfunction
-nnoremap <leader>nt :execute 'vsplit ~/notes/daily/' . NextBusinessDay() . '.md'<CR>
+nnoremap <leader>nt :execute 'vsplit ~/notes/weekly/' . NextWeek() . '.md'<CR>
 
 " Cycle checkbox: - → - [ ] → - [x] → -
 function! CycleCheckbox()
