@@ -57,11 +57,52 @@ J_SHORTCUTS=(
     notes ~/notes
 )
 
-# j function - uses J_SHORTCUTS array, falls back to ~/code/<name>
+# j function - uses J_SHORTCUTS array, falls back to ~/code/<name> with fuzzy matching
 j() {
+    # 1. Check shortcuts first (exact match)
     if [[ -n "${J_SHORTCUTS[$1]}" ]]; then
         cd "${J_SHORTCUTS[$1]}"
-    else
+        return
+    fi
+
+    # 2. Check exact match in ~/code
+    if [[ -d ~/code/$1 ]]; then
         cd ~/code/$1
+        return
+    fi
+
+    # 3. Fuzzy match: convert "flow3" to pattern "*f*l*o*w*3*"
+    local pattern=""
+    for (( i=0; i<${#1}; i++ )); do
+        pattern+="*${1:$i:1}"
+    done
+    pattern+="*"
+
+    # Find matching directories
+    local matches=()
+    for dir in ~/code/*/; do
+        local name="${dir%/}"
+        name="${name##*/}"
+        if [[ "${name:l}" == ${~pattern:l} ]]; then
+            matches+=("$name")
+        fi
+    done
+
+    if (( ${#matches[@]} == 0 )); then
+        echo "j: no match for '$1' in ~/code"
+        return 1
+    elif (( ${#matches[@]} == 1 )); then
+        cd ~/code/${matches[1]}
+    else
+        # Multiple matches - pick shortest, or show all if ambiguous
+        local shortest="${matches[1]}"
+        for m in "${matches[@]}"; do
+            if (( ${#m} < ${#shortest} )); then
+                shortest="$m"
+            fi
+        done
+        echo "j: multiple matches, using shortest: $shortest"
+        echo "   (all: ${matches[*]})"
+        cd ~/code/$shortest
     fi
 }
