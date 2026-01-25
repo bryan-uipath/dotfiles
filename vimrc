@@ -60,6 +60,9 @@ nnoremap <CR> :execute 'edit ~/notes/' . substitute(expand('<cWORD>'), '[^a-zA-Z
 " Follow markdown [text](path) links
 nnoremap <leader>gf :execute 'edit ' . matchstr(getline('.'), '(\zs[^)]*\ze)')<CR>
 
+" Bold selection with ** (markdown)
+vnoremap <leader>b c****<Esc>hP
+
 " Help gf find files
 set suffixesadd+=.md
 set path+=**

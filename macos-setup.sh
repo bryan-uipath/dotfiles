@@ -15,3 +15,6 @@ killall Finder
 # Prevent Spotlight from indexing ~/code
 mkdir -p ~/code
 touch ~/code/.metadata_never_index
+
+# CLI tools
+brew install tree
