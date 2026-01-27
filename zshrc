@@ -13,6 +13,10 @@ bindkey '^x^e' edit-command-line
 
 eval "$(starship init zsh)"
 
+# FZF - fuzzy finder (Ctrl+R for history, Ctrl+T for files, Alt+C for cd)
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border'
+
 # NVM
 export NVM_DIR="$HOME/.nvm"
 [ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"
@@ -21,10 +25,18 @@ export NVM_DIR="$HOME/.nvm"
 # Git
 alias gs="git status"
 # gco - git checkout with fuzzy branch matching
+# No args + fzf available: interactive picker sorted by recent
+# With args: fuzzy match branch name
 unalias gco 2>/dev/null
 gco() {
+    # No args: interactive picker with fzf (if available)
     if [[ -z "$1" ]]; then
-        git checkout
+        if command -v fzf &>/dev/null; then
+            local branch=$(git branch --sort=-committerdate --format='%(refname:short)' | fzf --preview 'git log --oneline -10 {}')
+            [[ -n "$branch" ]] && git checkout "$branch"
+        else
+            git checkout
+        fi
         return
     fi
 
@@ -60,16 +72,21 @@ gco() {
     elif (( ${#matches[@]} == 1 )); then
         git checkout "${matches[1]}"
     else
-        # Multiple matches - pick shortest
-        local shortest="${matches[1]}"
-        for m in "${matches[@]}"; do
-            if (( ${#m} < ${#shortest} )); then
-                shortest="$m"
-            fi
-        done
-        echo "gco: multiple matches, using shortest: $shortest"
-        echo "   (all: ${matches[*]})"
-        git checkout "$shortest"
+        # Multiple matches - use fzf if available, otherwise pick shortest
+        if command -v fzf &>/dev/null; then
+            local branch=$(printf '%s\n' "${matches[@]}" | fzf --preview 'git log --oneline -10 {}')
+            [[ -n "$branch" ]] && git checkout "$branch"
+        else
+            local shortest="${matches[1]}"
+            for m in "${matches[@]}"; do
+                if (( ${#m} < ${#shortest} )); then
+                    shortest="$m"
+                fi
+            done
+            echo "gco: multiple matches, using shortest: $shortest"
+            echo "   (all: ${matches[*]})"
+            git checkout "$shortest"
+        fi
     fi
 }
 alias gco-="git checkout -"
@@ -85,9 +102,145 @@ alias gpull="git pull"
 alias gpush="git push origin HEAD"
 alias gg="git grep"
 alias gaa="git add ."
+alias gf="git fetch origin"
+alias glog="git log --oneline -n10"
+
+# Quick commit + push (git add . && commit && push)
+gcp() { git add . && git commit -m "$*" && git push origin HEAD; }
 
 # Aviator
 alias avup="av sync --rebase-to-trunk"
+alias avs="av sync"
+alias avtc="av tree --current"
+alias avta="av tree"
+
+# av pr wrapper that adds stack comments to ALL PRs in the stack
+# Usage: avp [av pr flags]
+avp() {
+    # Run av pr with all args (--draft by default)
+    av pr --draft "$@"
+    local exit_code=$?
+
+    if [[ $exit_code -ne 0 ]]; then
+        return $exit_code
+    fi
+
+    # Update stack comments on all PRs
+    avp-update-stack-comments
+}
+
+# Update stack comments on all PRs in the current stack
+# Can be run standalone to refresh comments without creating PRs
+avp-update-stack-comments() {
+    # Get the stack tree
+    local stack_tree=$(av tree --current 2>/dev/null)
+
+    if [[ -z "$stack_tree" ]]; then
+        echo "avp: no stack found"
+        return 0
+    fi
+
+    # Parse the stack tree to extract branches and PR URLs
+    # Use a temp file to avoid subshell issues with here-strings
+    local tmpfile=$(mktemp)
+    echo "$stack_tree" > "$tmpfile"
+
+    local pr_urls=()
+    local pr_numbers=()
+
+    while IFS= read -r line; do
+        # Match PR URL line
+        if [[ "$line" == *"github.com"*"/pull/"* ]]; then
+            local pr_url=$(echo "$line" | grep -oE 'https://github.com/[^/]+/[^/]+/pull/[0-9]+')
+            local pr_number=$(echo "$pr_url" | grep -oE '[0-9]+$')
+            pr_urls+=("$pr_url")
+            pr_numbers+=("$pr_number")
+        fi
+    done < "$tmpfile"
+    rm -f "$tmpfile"
+
+    if [[ ${#pr_numbers[@]} -eq 0 ]]; then
+        echo "avp: no PRs found in stack"
+        return 0
+    fi
+
+    # Update each PR in the stack with a custom body
+    for pr_number in "${pr_numbers[@]}"; do
+        [[ -z "$pr_number" ]] && continue
+
+        # Build indented bullet list (reversed, with THIS PR indicator)
+        local stack_list=""
+        local indent=""
+        for (( i=${#pr_urls[@]}; i>=1; i-- )); do
+            local indicator=""
+            [[ "${pr_numbers[$i]}" == "$pr_number" ]] && indicator=" **← THIS PR**"
+            stack_list+="${indent}- ${pr_urls[$i]}$indicator"$'\n'
+            indent+="  "
+        done
+
+        local stack_body="<!-- av-stack-comment -->
+### Current Stack
+
+$stack_list
+_Managed with [Aviator](https://www.aviator.co/stacking)_"
+
+        # Check if comment already exists (use API to get numeric ID)
+        local existing_comment=$(gh api "repos/{owner}/{repo}/issues/$pr_number/comments" --jq '.[] | select(.body | contains("av-stack-comment")) | .id' 2>/dev/null | head -1)
+
+        if [[ -n "$existing_comment" ]]; then
+            gh api -X PATCH "/repos/{owner}/{repo}/issues/comments/$existing_comment" -f body="$stack_body" > /dev/null 2>&1
+            echo "avp: updated stack comment on PR #$pr_number"
+        else
+            gh pr comment "$pr_number" --body "$stack_body" > /dev/null 2>&1
+            echo "avp: added stack comment to PR #$pr_number"
+        fi
+    done
+}
+
+# Graphite -> Aviator migration helper
+# Reminds you to use aviator and suggests the equivalent command
+gt() {
+    local cmd="$1"
+    echo "Reminder: Use Aviator instead of Graphite!"
+    echo ""
+    case "$cmd" in
+        track)
+            echo "  gt track  ->  av stack branch"
+            echo "  Run: av stack branch"
+            ;;
+        squash)
+            echo "  gt squash  ->  av squash"
+            echo "  Run: av squash"
+            ;;
+        restack)
+            echo "  gt restack  ->  av restack"
+            echo "  Run: av restack"
+            ;;
+        sync)
+            echo "  gt sync  ->  av sync"
+            echo "  Run: av sync"
+            ;;
+        submit)
+            echo "  gt submit  ->  av pr"
+            echo "  Run: av pr"
+            ;;
+        tree)
+            echo "  gt tree  ->  av tree"
+            echo "  Run: av tree (or avtc for --current, avta for all)"
+            ;;
+        *)
+            echo "Common Graphite -> Aviator mappings:"
+            echo "  gt track   ->  av stack branch"
+            echo "  gt squash  ->  av squash"
+            echo "  gt restack ->  av restack"
+            echo "  gt sync    ->  av sync"
+            echo "  gt submit  ->  av pr"
+            echo "  gt tree    ->  av tree"
+            echo ""
+            echo "Run 'av help' for full Aviator documentation"
+            ;;
+    esac
+}
 
 # Quick reload
 alias sz="source ~/.zshrc"
@@ -95,6 +248,24 @@ alias sz="source ~/.zshrc"
 # Docker
 alias dcu="docker compose up -d"
 alias dcl="docker compose logs"
+alias dcd="docker compose down"
+alias dcr="docker compose restart"
+
+
+# Interactive docker compose logs with fzf
+dcf() {
+    if ! command -v fzf &>/dev/null; then
+        docker compose logs -f "$@"
+        return
+    fi
+    local service
+    if [[ -n "$1" ]]; then
+        service="$1"
+    else
+        service=$(docker compose ps --format '{{.Service}}' 2>/dev/null | fzf)
+    fi
+    [[ -n "$service" ]] && docker compose logs -f "$service"
+}
 
 # Open current dir
 alias o="open ."
@@ -127,6 +298,21 @@ nmeet() { vim ~/notes/meetings/$(date +%Y-%m-%d)-$1.md; }
 
 # Search all notes
 ns() { grep -ri "$*" ~/notes --include="*.md"; }
+
+# Interactive note fuzzy find with fzf (search content, open in vim)
+nff() {
+    if ! command -v fzf &>/dev/null; then
+        echo "nf: fzf not installed"
+        return 1
+    fi
+    local file
+    if [[ -n "$1" ]]; then
+        file=$(grep -ril "$1" ~/notes --include="*.md" | fzf --preview 'head -50 {}')
+    else
+        file=$(find ~/notes -name "*.md" -type f | fzf --preview 'head -50 {}')
+    fi
+    [[ -n "$file" ]] && vim "$file"
+}
 
 # Archive a project: narchive <project-name>
 narchive() {
@@ -166,7 +352,13 @@ alias dl='cd ~/Downloads'
 alias dt='cd ~/Desktop'
 
 # iTerm tab naming
-tabname() { echo -ne "\033]0;$1\007"; }
+# For single-pane tabs: tn "name" sets the session title
+# For multi-pane tabs: use Cmd+Shift+I (Edit Tab Title) for a tab-level name
+tabname() {
+    echo -ne "\033]1;$1\007"
+    # Set iTerm user variable (value must be base64 encoded)
+    echo -ne "\033]1337;SetUserVar=tabname=$(echo -n "$1" | base64)\007"
+}
 alias tn='tabname'
 
 # Utilities
@@ -176,7 +368,7 @@ alias ttop='top -R -F -s 10 -o rsize'
 alias flushdns='dscacheutil -flushcache && sudo killall -HUP mDNSResponder'
 alias sniff="sudo ngrep -d 'en1' -t '^(GET|POST) ' 'tcp and port 80'"
 alias httpdump="sudo tcpdump -i en1 -n -s 0 -w - | grep -a -o -E \"Host\\: .*|GET \\/.*\""
-alias urlencode='python -c "import sys, urllib as ul; print ul.quote_plus(sys.argv[1]);"'
+alias urlencode='python3 -c "import sys, urllib.parse; print(urllib.parse.quote_plus(sys.argv[1]))"'
 
 # Open URL in Chrome
 chrome() {
@@ -281,7 +473,19 @@ J_SHORTCUTS=(
 )
 
 # j function - uses J_SHORTCUTS array, falls back to ~/code/<name> with fuzzy matching
+# No args + fzf available: interactive picker
 j() {
+    # No args: interactive picker with fzf (if available)
+    if [[ -z "$1" ]]; then
+        if command -v fzf &>/dev/null; then
+            local dir=$(ls -d ~/code/*/ 2>/dev/null | xargs -n1 basename | fzf --preview 'git -C ~/code/{} log --oneline -5 2>/dev/null || echo "Not a git repo"')
+            [[ -n "$dir" ]] && cd ~/code/"$dir"
+        else
+            echo "j: specify a directory or install fzf for interactive picker"
+        fi
+        return
+    fi
+
     # 1. Check shortcuts first (exact match)
     if [[ -n "${J_SHORTCUTS[$1]}" ]]; then
         cd "${J_SHORTCUTS[$1]}"
@@ -317,7 +521,7 @@ j() {
     elif (( ${#matches[@]} == 1 )); then
         cd ~/code/${matches[1]}
     else
-        # Multiple matches - pick shortest, or show all if ambiguous
+        # Multiple matches - always pick shortest (fzf only used with no args)
         local shortest="${matches[1]}"
         for m in "${matches[@]}"; do
             if (( ${#m} < ${#shortest} )); then
@@ -329,3 +533,6 @@ j() {
         cd ~/code/$shortest
     fi
 }
+
+# Cargo / rust
+export PATH="$HOME/.cargo/bin:$PATH"

@@ -18,3 +18,7 @@ touch ~/code/.metadata_never_index
 
 # CLI tools
 brew install tree
+brew install fzf
+
+# Set up fzf key bindings and fuzzy completion
+$(brew --prefix)/opt/fzf/install --key-bindings --completion --no-bash --no-fish --no-update-rc

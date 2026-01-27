@@ -54,6 +54,36 @@ function! CycleCheckbox()
 endfunction
 nnoremap <leader>x :call CycleCheckbox()<CR>
 
+" Complete task and move to Completed section at bottom
+function! CompleteAndArchive()
+  let line = getline('.')
+  let save_line = line('.')
+  " Only works on checkbox items
+  if match(line, '- \[ \]') < 0 && match(line, '- \[x\]') < 0
+    echo "Not a checkbox item"
+    return
+  endif
+  " Mark as complete if not already
+  if match(line, '- \[ \]') >= 0
+    let line = substitute(line, '\[ \]', '[x]', '')
+  endif
+  " Delete current line (into black hole register)
+  normal! "_dd
+  " Go to end of file
+  normal! G
+  " Check if Completed section exists, create if not
+  if search('^## Completed', 'bW') == 0
+    " No Completed section, add it
+    call append(line('$'), ['', '## Completed'])
+    normal! G
+  endif
+  " Append the completed item
+  call append(line('.'), line)
+  " Return to original position
+  call cursor(save_line, 1)
+endfunction
+nnoremap <leader>X :call CompleteAndArchive()<CR>
+
 " Follow [[wiki-link]] under cursor
 nnoremap <CR> :execute 'edit ~/notes/' . substitute(expand('<cWORD>'), '[^a-zA-Z0-9_/-]', '', 'g') . '.md'<CR>
 
