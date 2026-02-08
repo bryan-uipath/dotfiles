@@ -101,9 +101,13 @@ alias grs="git reset --hard"
 alias gpull="git pull"
 alias gpush="git push origin HEAD"
 alias gg="git grep"
+alias grb="git rebase"
+alias grbi="git rebase -i"
+alias grbc="git rebase --continue"
+alias grba="git rebase --abort"
 alias gaa="git add ."
 alias gf="git fetch origin"
-alias glog="git log --oneline -n10"
+glog() { git log --oneline -n${1:-10}; }
 
 # Quick commit + push (git add . && commit && push)
 gcp() { git add . && git commit -m "$*" && git push origin HEAD; }
@@ -596,6 +600,107 @@ j() {
         echo "   (all: ${matches[*]})"
         cd ~/code/$shortest
     fi
+}
+
+# Find which repo(s) have a branch matching a pattern
+gfind() {
+    for dir in ~/code/*/; do
+        if [[ -d "$dir/.git" ]]; then
+            local name="${dir%/}"
+            name="${name##*/}"
+            local match=$(git -C "$dir" branch --list "*$1*" 2>/dev/null)
+            if [[ -n "$match" ]]; then
+                printf "\e[36m%s\e[0m\n%s\n\n" "$name" "$match"
+            fi
+        fi
+    done
+}
+
+# Dashboard: open PRs + which local folder has the branch
+dash() {
+    local prs=$(gh pr list --repo UiPath/flow-workbench --author @me \
+        --json number,title,headRefName,reviewDecision,statusCheckRollup \
+        --jq '.[] |
+            (.statusCheckRollup // [] | if length == 0 then "PENDING"
+             elif any(.conclusion == "FAILURE" or .conclusion == "CANCELLED") then "FAILURE"
+             elif all(.conclusion == "SUCCESS" or .conclusion == "SKIPPED" or .conclusion == "NEUTRAL") then "SUCCESS"
+             else "PENDING" end) as $checks |
+            "\(.number)\t\(.headRefName)\t\(.reviewDecision // "")\t\($checks)\t\(.title)"')
+
+    if [[ -z "$prs" ]]; then
+        echo "No open PRs"
+        return
+    fi
+
+    printf "\033[1m%-6s  %s %s  %-22s  %-45s  %s\033[0m\n" "PR" "R" "C" "FOLDER" "BRANCH" "TITLE"
+
+    local ri_icon ri_color ci_icon ci_color folder fcolor current
+    while IFS=$'\t' read -r number branch review checks title; do
+        # Review indicator
+        case "$review" in
+            APPROVED)           ri_icon="✔"; ri_color=32 ;;
+            CHANGES_REQUESTED)  ri_icon="✘"; ri_color=31 ;;
+            *)                  ri_icon="○"; ri_color=90 ;;
+        esac
+
+        # Checks indicator
+        case "$checks" in
+            SUCCESS)  ci_icon="✔"; ci_color=32 ;;
+            FAILURE)  ci_icon="✘"; ci_color=31 ;;
+            *)        ci_icon="●"; ci_color=33 ;;
+        esac
+
+        # Find local folder
+        folder="-"; fcolor=90
+        for dir in ~/code/flow-workbench*/; do
+            if [[ -d "$dir/.git" ]] && git -C "$dir" show-ref --verify --quiet "refs/heads/$branch" 2>/dev/null; then
+                folder="${dir%/}"
+                folder="${folder##*/}"
+                current=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+                if [[ "$current" == "$branch" ]]; then
+                    fcolor=32
+                    folder="$folder *"
+                else
+                    fcolor=33
+                fi
+                break
+            fi
+        done
+        printf "\033[1m#%s\033[0m  \033[%sm%s\033[0m \033[%sm%s\033[0m  \033[%sm%s\033[0m  \033[36m%s\033[0m  %s\n" \
+            "$number" "$ri_color" "$ri_icon" "$ci_color" "$ci_icon" "$fcolor" "$folder" "$branch" "$title"
+    done <<< "$prs"
+
+    # Collect open PR branch names for comparison
+    local pr_branches
+    pr_branches=$(echo "$prs" | cut -f2)
+
+    # Show free repos
+    local name branch_on free_found=0
+    for dir in ~/code/flow-workbench*/; do
+        [[ -d "$dir/.git" ]] || continue
+        name="${dir%/}"; name="${name##*/}"
+        branch_on=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+        # Free if on develop/main, or current branch not in any open PR
+        local is_free=0
+        if [[ "$branch_on" =~ ^(develop|main|master)$ ]]; then
+            is_free=1
+        elif ! echo "$pr_branches" | grep -qxF "$branch_on"; then
+            is_free=1
+        fi
+
+        if [[ "$is_free" -eq 1 ]]; then
+            if [[ "$free_found" -eq 0 ]]; then
+                printf "\n\033[1m%-22s  %s\033[0m\n" "FREE" "BRANCH"
+                free_found=1
+            fi
+            if [[ "$branch_on" =~ ^(develop|main|master)$ ]]; then
+                printf "\033[32m%-22s\033[0m  \033[32m%s\033[0m\n" "$name" "$branch_on"
+            else
+                printf "\033[33m%-22s\033[0m  \033[33m%s\033[0m  \033[90m(no open PR)\033[0m\n" "$name" "$branch_on"
+            fi
+        fi
+    done
 }
 
 # Cargo / rust
