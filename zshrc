@@ -6,6 +6,16 @@
 
 export PATH="$HOME/.local/bin:$PATH"
 
+# History
+HISTSIZE=50000
+SAVEHIST=50000
+HISTFILE=~/.zsh_history
+setopt APPEND_HISTORY
+setopt INC_APPEND_HISTORY
+setopt SHARE_HISTORY
+setopt HIST_IGNORE_DUPS
+setopt HIST_IGNORE_SPACE
+
 export EDITOR=vim
 autoload -U edit-command-line
 zle -N edit-command-line
@@ -97,6 +107,8 @@ alias gl="git log --oneline -n10"
 alias gd="git diff"
 alias ga="git add"
 alias gc="git commit -m"
+alias gca="git commit --amend --no-edit"
+alias gcam="git commit --amend -m"
 alias grs="git reset --hard"
 alias gpull="git pull"
 alias gpush="git push origin HEAD"
@@ -107,6 +119,7 @@ alias grbc="git rebase --continue"
 alias grba="git rebase --abort"
 alias gaa="git add ."
 alias gf="git fetch origin"
+unalias glog 2>/dev/null
 glog() { git log --oneline -n${1:-10}; }
 
 # Quick commit + push (git add . && commit && push)
@@ -617,7 +630,7 @@ gfind() {
 }
 
 # Dashboard: open PRs + which local folder has the branch
-dash() {
+prdash() {
     local prs=$(gh pr list --repo UiPath/flow-workbench --author @me \
         --json number,title,headRefName,reviewDecision,statusCheckRollup \
         --jq '.[] |
@@ -705,3 +718,9 @@ dash() {
 
 # Cargo / rust
 export PATH="$HOME/.cargo/bin:$PATH"
+
+# asdf
+. /opt/homebrew/opt/asdf/libexec/asdf.sh
+. ~/.asdf/plugins/dotnet/set-dotnet-env.zsh
+
+# environment variables (secrets are in ~/dotfiles/.secrets)
