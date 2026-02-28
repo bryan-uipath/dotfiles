@@ -105,6 +105,7 @@ alias gp="git push origin HEAD"
 alias gpf="git push --force origin HEAD"
 alias gl="git log --oneline -n10"
 alias gd="git diff"
+alias gds="git diff --staged"
 alias ga="git add"
 alias gc="git commit -m"
 alias gca="git commit --amend --no-edit"
@@ -125,200 +126,6 @@ glog() { git log --oneline -n${1:-10}; }
 # Quick commit + push (git add . && commit && push)
 gcp() { git add . && git commit -m "$*" && git push origin HEAD; }
 
-# Aviator
-# BLOCKED: av sync has a bug that falsely detects PRs as merged when their
-# number is mentioned in any commit message on the trunk branch (e.g., "see #108").
-# It adds a spurious mergeCommit to .git/av/av.db. Use avsafe instead.
-alias avs="avsafe"
-# av() {
-#     if [[ "$1" == "sync" ]]; then
-#         echo "❌ av sync blocked - use avsafe instead"
-#         echo "   av sync falsely marks PRs as merged (adds mergeCommit to .git/av/av.db)"
-#         echo "   Run: avsafe"
-#         return 1
-#     fi
-#     command av "$@"
-# }
-# avsafe() {
-#     echo "→ git fetch origin"
-#     git fetch origin || return 1
-# 
-#     echo "→ av-cleanup-merged (reparent children of merged branches)"
-#     av-cleanup-merged || return 1
-# 
-#     echo "→ av restack"
-#     av restack || return 1
-# 
-#     echo "→ av pr --all"
-#     command av pr --all "$@"
-# }
-
-# Clean up merged branches from av's metadata
-# - Reparents children of merged branches to the merged branch's parent (preserves stack)
-# - Removes merged branch entries from .git/av/av.db
-av-cleanup-merged() {
-    local av_db=".git/av/av.db"
-    [[ -f "$av_db" ]] || { echo "  No av.db found"; return 0; }
-
-    # Find merged branches
-    local merged_branches=$(jq -r '.branches | to_entries[] | select(.value.pullRequest.state == "MERGED") | .key' "$av_db" 2>/dev/null)
-    [[ -z "$merged_branches" ]] && { echo "  No merged branches to clean up"; return 0; }
-
-    echo "  Found merged branches:"
-    echo "$merged_branches" | sed 's/^/    /'
-
-    # Process each merged branch
-    while IFS= read -r merged; do
-        [[ -z "$merged" ]] && continue
-
-        # Get the merged branch's parent info
-        local parent_name=$(jq -r ".branches[\"$merged\"].parent.name // \"develop\"" "$av_db")
-        local parent_trunk=$(jq -r ".branches[\"$merged\"].parent.trunk // false" "$av_db")
-
-        echo "  Cleaning up: $merged (reparenting children to $parent_name)"
-
-        # Reparent children to the merged branch's parent, then remove merged branch
-        jq "
-            .branches |= map_values(
-                if .parent.name == \"$merged\" then
-                    .parent = {\"name\": \"$parent_name\", \"trunk\": $parent_trunk}
-                else . end
-            ) | del(.branches[\"$merged\"])
-        " "$av_db" > "${av_db}.tmp" && mv "${av_db}.tmp" "$av_db"
-    done <<< "$merged_branches"
-
-    echo "  Updated av.db"
-}
-alias avtc="av tree --current"
-alias avta="av tree"
-
-# av pr wrapper that adds stack comments to ALL PRs in the stack
-# Usage: avp [av pr flags]
-avp() {
-    # Run av pr --all to push entire stack (--draft by default)
-    av pr --all --draft "$@"
-    local exit_code=$?
-
-    if [[ $exit_code -ne 0 ]]; then
-        return $exit_code
-    fi
-
-    # Update stack comments on all PRs
-    avp-update-stack-comments
-}
-
-# Update stack comments on all PRs in the current stack
-# Can be run standalone to refresh comments without creating PRs
-avp-update-stack-comments() {
-    # Get the stack tree
-    local stack_tree=$(av tree --current 2>/dev/null)
-
-    if [[ -z "$stack_tree" ]]; then
-        echo "avp: no stack found"
-        return 0
-    fi
-
-    # Parse the stack tree to extract branches and PR URLs
-    # Use a temp file to avoid subshell issues with here-strings
-    local tmpfile=$(mktemp)
-    echo "$stack_tree" > "$tmpfile"
-
-    local pr_urls=()
-    local pr_numbers=()
-
-    while IFS= read -r line; do
-        # Match PR URL line
-        if [[ "$line" == *"github.com"*"/pull/"* ]]; then
-            local pr_url=$(echo "$line" | grep -oE 'https://github.com/[^/]+/[^/]+/pull/[0-9]+')
-            local pr_number=$(echo "$pr_url" | grep -oE '[0-9]+$')
-            pr_urls+=("$pr_url")
-            pr_numbers+=("$pr_number")
-        fi
-    done < "$tmpfile"
-    rm -f "$tmpfile"
-
-    if [[ ${#pr_numbers[@]} -eq 0 ]]; then
-        echo "avp: no PRs found in stack"
-        return 0
-    fi
-
-    # Update each PR in the stack with a custom body
-    for pr_number in "${pr_numbers[@]}"; do
-        [[ -z "$pr_number" ]] && continue
-
-        # Build indented bullet list (reversed, with THIS PR indicator)
-        local stack_list=""
-        local indent=""
-        for (( i=${#pr_urls[@]}; i>=1; i-- )); do
-            local indicator=""
-            [[ "${pr_numbers[$i]}" == "$pr_number" ]] && indicator=" **← THIS PR**"
-            stack_list+="${indent}- ${pr_urls[$i]}$indicator"$'\n'
-            indent+="  "
-        done
-
-        local stack_body="<!-- av-stack-comment -->
-### Current Stack
-
-$stack_list
-_Managed with [Aviator](https://www.aviator.co/stacking)_"
-
-        # Check if comment already exists (use API to get numeric ID)
-        local existing_comment=$(gh api "repos/{owner}/{repo}/issues/$pr_number/comments" --jq '.[] | select(.body | contains("av-stack-comment")) | .id' 2>/dev/null | head -1)
-
-        if [[ -n "$existing_comment" ]]; then
-            gh api -X PATCH "/repos/{owner}/{repo}/issues/comments/$existing_comment" -f body="$stack_body" > /dev/null 2>&1
-            echo "avp: updated stack comment on PR #$pr_number"
-        else
-            gh pr comment "$pr_number" --body "$stack_body" > /dev/null 2>&1
-            echo "avp: added stack comment to PR #$pr_number"
-        fi
-    done
-}
-
-# Graphite -> Aviator migration helper
-# Reminds you to use aviator and suggests the equivalent command
-gt() {
-    local cmd="$1"
-    echo "Reminder: Use Aviator instead of Graphite!"
-    echo ""
-    case "$cmd" in
-        track)
-            echo "  gt track  ->  av stack branch"
-            echo "  Run: av stack branch"
-            ;;
-        squash)
-            echo "  gt squash  ->  av squash"
-            echo "  Run: av squash"
-            ;;
-        restack)
-            echo "  gt restack  ->  av restack"
-            echo "  Run: av restack"
-            ;;
-        sync)
-            echo "  gt sync  ->  av sync"
-            echo "  Run: av sync"
-            ;;
-        submit)
-            echo "  gt submit  ->  av pr"
-            echo "  Run: av pr"
-            ;;
-        tree)
-            echo "  gt tree  ->  av tree"
-            echo "  Run: av tree (or avtc for --current, avta for all)"
-            ;;
-        *)
-            echo "Common Graphite -> Aviator mappings:"
-            echo "  gt track   ->  av stack branch"
-            echo "  gt squash  ->  av squash"
-            echo "  gt restack ->  av restack"
-            echo "  gt sync    ->  av sync"
-            echo "  gt submit  ->  av pr"
-            echo "  gt tree    ->  av tree"
-            echo ""
-            echo "Run 'av help' for full Aviator documentation"
-            ;;
-    esac
-}
 
 # Quick reload
 alias sz="source ~/.zshrc"
@@ -411,6 +218,10 @@ alias cyolo="claude --dangerously-skip-permissions"
 # Codex
 alias x="codex"
 alias xyolo="codex --yolo"
+
+# Stacked PRs (us)
+alias up="us pr"
+alias ut="us tree"
 
 # General shortcuts
 alias g='git'
