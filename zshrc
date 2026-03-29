@@ -162,6 +162,8 @@ alias nnw='vim ~/notes/weekly/$(date -v+7d +%Y-w%V).md'
 alias n="cd ~/notes"
 alias nls='ls ~/notes/projects'
 alias np='cd ~/notes/projects'
+alias dri='vim ~/notes/projects/dri-w$(date +%V)/notes.md'
+alias ndri='vim ~/notes/projects/dri-w$(date -v+7d +%V)/notes.md'
 
 # Create new project and cd into it
 npnew() {
@@ -174,6 +176,22 @@ npnew() {
 
 # Quick capture to inbox
 ncap() { echo "- $*" >> ~/notes/$(date +%Y).md; echo "Added to inbox"; }
+
+# Add priority to top of weekly notes (after --- separator)
+npri() {
+    local file=~/notes/weekly/$(date +%Y-w%V).md
+    if [[ ! -f "$file" ]]; then
+        echo "Weekly note not found: $file"
+        return 1
+    fi
+    local tmp=$(mktemp)
+    if grep -q '^# Priorities' "$file"; then
+        awk -v item="- $*" '/^# Priorities/ { print; print item; next } 1' "$file" > "$tmp" && mv "$tmp" "$file"
+    else
+        awk -v item="- $*" 'done==0 && /^---$/ { print; print ""; print "# Priorities"; print item; done=1; next } 1' "$file" > "$tmp" && mv "$tmp" "$file"
+    fi
+    echo "Added priority to $(basename $file): $*"
+}
 
 # Open 1:1 notes for a person
 n1() { vim ~/notes/people/$1.md; }
@@ -213,7 +231,7 @@ narchive() {
 
 # Claude
 alias c="claude"
-alias cyolo="claude --dangerously-skip-permissions"
+alias cy="claude --dangerously-skip-permissions"
 
 # Codex
 alias x="codex"
@@ -222,6 +240,8 @@ alias xyolo="codex --yolo"
 # Stacked PRs (us)
 alias up="us pr"
 alias ut="us tree"
+alias usp="us pr"
+alias ust="us tree"
 
 # General shortcuts
 alias g='git'
@@ -534,4 +554,3 @@ export PATH="$HOME/.cargo/bin:$PATH"
 . /opt/homebrew/opt/asdf/libexec/asdf.sh
 . ~/.asdf/plugins/dotnet/set-dotnet-env.zsh
 
-# environment variables (secrets are in ~/dotfiles/.secrets)
